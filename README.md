@@ -44,6 +44,7 @@ Table of Contents
 * [Providing Instructions](#instructions)
 * [Further Information](#further-information)
    * [Reference Manual](#reference-manual)
+   * [Common Problems](#common-problems)
    * [Example Projects](#example-projects)
    * [Additional Resources](#additional-resources)
 
@@ -376,6 +377,10 @@ Libra uses intelligent natural language processing to analyze user instructions 
 ## Reference Manual ##
 
 A thorough explanation of each of the methods and functions that are part of the Libra library is provided in a seperate reference manual, available in the accompanying info folder. 
+
+## Common Problems ##
+
+Running into any issues? A catalog of common possible problems that could emerge when attempting to use Libra and their respective solutions are provided in the accompanying info folder. 
 
 ## Example Projects ##
 
