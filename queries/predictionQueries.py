@@ -2,8 +2,7 @@
 # inserting into sis path
 import sys
 
-from keras_preprocessing import sequence
-
+print(sys.version)
 sys.path.insert(1, './preprocessing')
 sys.path.insert(1, './data_generation')
 sys.path.insert(1, './modeling')
@@ -17,24 +16,19 @@ import numpy as np
 import pandas as pd
 from tabulate import tabulate
 from scipy.spatial.distance import cosine
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score
 from pandas import DataFrame
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
-from sklearn import preprocessing, svm
+from sklearn import preprocessing, svm, tree
 from sklearn.compose import ColumnTransformer
-from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
 from dataset_labelmatcher import get_similar_column, get_similar_model
-from tensorflow.keras.callbacks  import EarlyStopping
-from matplotlib import pyplot
+from keras.callbacks import EarlyStopping
 from grammartree import get_value_instruction
-from data_preprocesser import structured_preprocesser, initial_preprocesser
-from predictionModelCreation import get_keras_model_reg, get_keras_text_class
-from predictionModelCreation import get_keras_model_class
-from keras.utils import to_categorical
-from keras.utils import np_utils
+from data_preprocesser import structured_preprocesser
+from predictionModelCreation import get_keras_model_class, get_keras_model_reg
+from keras.utils import np_utils, to_categorical
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 from generatePlots import (generate_clustering_plots,
@@ -52,13 +46,11 @@ from tuner import tuneReg, tuneClass, tuneCNN
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import SelectFromModel
-from sklearn import preprocessing, tree
-from NLP_preprocessing import text_clean_up, lemmatize_text
 from keras.preprocessing.image import ImageDataGenerator
 
 warnings.simplefilter(action='error', category=FutureWarning)
 warnings.simplefilter(action="ignore", category=SettingWithCopyWarning)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0' 
 
 # function imports from other files
 
@@ -112,6 +104,34 @@ def logger(instruction, found="",slash=''):
     else:
         print(currLog)
     currLog=""
+
+
+def initial_preprocesser(data, instruction, preprocess):
+    # get target column
+    logger("Identifying target from instruction...")
+    remove = get_similar_column(
+            get_value_instruction(instruction), data)
+    y = data[remove]
+
+    # remove rows where target is NaN
+    data = data[y.notna()]
+    del data[remove]
+
+    #identification of id columns: if they're an unique and non-numerical we have to remove
+    for column in data.columns:
+        if len(np.unique(data[column])) == len(data) and data[column].dtype.name == 'object':
+            del data[column]
+
+    # preprocess the dataset
+    full_pipeline = None
+    if preprocess:
+        logger("Preprocessing data...")
+        full_pipeline = structured_preprocesser(data)
+    else:
+        data.fillna(0, inplace=True)
+
+    return data, y, remove, full_pipeline
+
 
 # class to store all query information
 
@@ -184,7 +204,8 @@ class client:
             maximizer="val_loss"):
 
         global currLog
-        logger("reading in dataset...")
+        logger("Reading in dataset...")
+        data = pd.read_csv(self.dataset)
 
         dataReader = DataReader(self.dataset)
         data = dataReader.data_generator()
@@ -204,14 +225,15 @@ class client:
         
         # Only used for the interpreter
         target_scaler = StandardScaler()
-        target_scaler.fit_transform(np.array(y).reshape(-1, 1))
-
-        logger("establishing callback function...")
+        y = target_scaler.fit_transform(np.array(y).reshape(-1,1))
+        
+        logger("Establishing callback function...")
+        X_train, X_test, y_train, y_test = train_test_split(
+            data, y, test_size=test_size, random_state=random_state)
 
         models = []
         losses = []
         model_data=[]
-
         # callback function to store lowest loss value
         es = EarlyStopping(
             monitor=maximizer,
@@ -223,8 +245,7 @@ class client:
 
         # get the first 3 layer model
         model = get_keras_model_reg(data, i)
-
-        logger("training initial model...")
+        logger("Training initial model...")
         history = model.fit(
             X_train,
             y_train,
@@ -232,8 +253,8 @@ class client:
             validation_data=(
                 X_test,
                 y_test),
-            callbacks=[es],
-            verbose=0)
+            verbose=0,
+            callbacks=[es])
         models.append(history)
         model_data.append(model)
 
@@ -243,24 +264,22 @@ class client:
         logger("->","Test Loss: "+ str(history.history['val_loss']
                      [len(history.history['val_loss']) - 1]),'|')
         print("")
-        
-
-        losses.append(history.history[maximizer]
-                      [len(history.history[maximizer]) - 1])
-
+        losses.append(history.history['val_loss']
+                      [len(history.history['val_loss']) - 1])
         # keeps running model and fit functions until the validation loss stops
         # decreasing
-        logger("testing number of layers...")
-        print(currLog)
-        while (all(x > y for x, y in zip(losses, losses[1:]))):
+        logger("Testing number of layers...")
+        while(all(x > y for x, y in zip(losses, losses[1:]))):
             model = get_keras_model_reg(data, i)
             history = model.fit(
-                X_train,
-                y_train,
-                epochs=epochs,
-                validation_data=(
-                    X_test,
-                    y_test), verbose=0)
+            X_train,
+            y_train,
+            epochs=epochs,
+            validation_data=(
+                X_test,
+                y_test),
+            verbose=0,
+            callbacks=[es])
             model_data.append(model)
             models.append(history)
             logger("->","Current number of layers: "+ str(len(model.layers)))
@@ -269,27 +288,27 @@ class client:
             logger("->","Test Loss: "+ str(history.history['val_loss']
                         [len(history.history['val_loss']) - 1]),'|')
             print("")
-            losses.append(history.history[maximizer]
-                          [len(history.history[maximizer]) - 1])
+            losses.append(history.history['val_loss']
+                        [len(history.history['val_loss']) - 1])
             i += 1
 
         final_model=model_data[losses.index(min(losses))]
         final_hist=models[losses.index(min(losses))]
         logger('->',"Best number of layers found: "+ str(len(final_model.layers)))
-        logger('->',"Training Loss: "+str(final_hist.history['loss']
-                     [len(final_hist.history['val_loss']) - 1]))
-        logger('->',"Test Loss: "+str(final_hist.history['val_loss']
-                     [len(final_hist.history['val_loss']) - 1]))
+        logger('->',"Training Accuracy: "+str(final_hist.history['accuracy']
+                     [len(final_hist.history['val_accuracy']) - 1]))
+        logger('->',"Test Accuracy: "+str(final_hist.history['val_accuracy']
+                     [len(final_hist.history['val_accuracy']) - 1]))
         print("")
         # calls function to generate plots in plot generation
         if generate_plots:
+            logger("Plotting Graphs...")
             init_plots, plot_names = generate_regression_plots(
                 models[len(models) - 1], data, y)
             plots = {}
             for x in range(len(plot_names)):
                 plots[str(plot_names[x])] = init_plots[x]
 
-        print(currLog)
         # stores values in the client object models dictionary field
         self.models['regression_ANN'] = {
             'model': model,
@@ -320,8 +339,8 @@ class client:
             maximizer="val_loss"):
 
         # reads dataset and fills n/a values with zeroes
-        #data = pd.read_csv(self.dataset)
-   
+        logger("Reading in dataset...")
+        data = pd.read_csv(self.dataset)
 
         dataReader = DataReader(self.dataset)
         data = dataReader.data_generator()
@@ -337,7 +356,7 @@ class client:
         le = preprocessing.LabelEncoder()
         y = le.fit_transform(y)
         y = np_utils.to_categorical(y)
-
+        logger("Hot encoding values and preprocessing...")
         X_train, X_test, y_train, y_test = train_test_split(
             data, y, test_size=test_size, random_state=random_state)
 
@@ -347,19 +366,19 @@ class client:
         model_data=[]
 
         # early stopping callback
+        logger("Establishing callback function...")
         es = EarlyStopping(
             monitor=maximizer,
-            mode='min',
+            mode=callback_mode,
             verbose=0,
             patience=5)
 
         i = 0
         model = get_keras_model_class(data, i, num_classes)
-
+        logger("Training initial model...")
         history = model.fit(
             data, y, epochs=epochs, validation_data=(
-                X_test, y_test), callbacks=[es], verbose=0)
-
+                X_test, y_test), verbose=0, callbacks=[es])
         model_data.append(model)
         models.append(history)
         logger("->","Initial number of layers: "+ str(len(model.layers)))
@@ -368,10 +387,10 @@ class client:
         logger("->","Test Loss: "+ str(history.history['val_loss']
                     [len(history.history['val_loss']) - 1]),'|')
         print("")
-
         losses.append(history.history[maximizer]
-                      [len(history.history[maximizer]) - 1])
-
+                      [len(models[i].history[maximizer]) - 1])
+        accuracies.append(history.history['val_accuracy']
+                      [len(models[i].history['val_accuracy']) - 1])
         # keeps running model and fit functions until the validation loss stops
         # decreasing
         logger("testing number of layers...")
@@ -384,21 +403,20 @@ class client:
                 validation_data=(
                     X_test,
                     y_test),
-                callbacks=[es], verbose=0)
-
-            model_data.append(model)
+                verbose=0,
+                callbacks=[es])
             models.append(history)
             logger("->","Current number of layers: "+ str(len(model.layers)))
-            logger("->","Training Loss: "+ str(history.history['loss']
-                        [len(history.history['val_loss']) - 1]),'|')
-            logger("->","Test Loss: "+ str(history.history['val_loss']
+            logger("->","Training Accuracy: "+ str(history.history['accuracy']
+                        [len(history.history['val_loss']) - 1],'|'))
+            logger("->","Test Accuracy: "+ str(history.history['val_accuracy']
                         [len(history.history['val_loss']) - 1]),'|')
             print("")
-
+            model_data.append(model)
             losses.append(history.history[maximizer]
-                          [len(history.history[maximizer]) - 1])
+                          [len(models[i].history[maximizer]) - 1])
             accuracies.append(history.history['val_accuracy']
-                      [len(history.history['val_accuracy']) - 1])
+                      [len(models[i].history['val_accuracy']) - 1])
             i += 1
 
         final_model=model_data[losses.index(min(losses))]
@@ -409,8 +427,8 @@ class client:
         logger('->',"Test Accuracy: "+str(final_hist.history['val_accuracy']
                      [len(final_hist.history['val_accuracy']) - 1]))
         print("")
-
         # genreates appropriate classification plots by feeding all information
+        logger("Plotting Graphs...")
         plots = generate_classification_plots(
             models[len(models) - 1], data, y, model, X_test, y_test)
 
@@ -488,7 +506,7 @@ class client:
 
         # generates the clustering plots approiately
         if generate_plots:
-            logger("Generating plots and storing in model")
+            logger("Generating Graph and storing in model")
             init_plots, plot_names = generate_clustering_plots(
                 modelStorage[len(modelStorage) - 1], dataPandas, data)
 
@@ -531,6 +549,7 @@ class client:
         num_classes = len(np.unique(y))
 
         # encodes the label dataset into 0's and 1's
+        logger("Preprocssing the data...")
         le = preprocessing.LabelEncoder()
         y = le.fit_transform(y)
 
@@ -582,6 +601,7 @@ class client:
         num_classes = len(np.unique(y))
 
         # encodes the label dataset into 0's and 1's
+        logger("Preprocssing the data...")
         le = preprocessing.LabelEncoder()
         y = le.fit_transform(y)
 
@@ -629,6 +649,7 @@ class client:
         num_classes = len(np.unique(y))
 
         # encodes the label dataset into 0's and 1's
+        logger("Preprocssing the data...")        
         le = preprocessing.LabelEncoder()
         y = le.fit_transform(y)
 
@@ -674,6 +695,7 @@ class client:
         num_classes = len(np.unique(y))
 
         # encodes the label dataset into 0's and 1's
+        logger("Preprocssing the data...")
         le = preprocessing.LabelEncoder()
         y = le.fit_transform(y)
 
@@ -854,28 +876,36 @@ class client:
             loss=loss_func,
             metrics=['accuracy'])
 
-        train_data = ImageDataGenerator(rescale=1. / 255,
-                                        shear_range=0.2,
-                                        zoom_range=0.2,
-                                        horizontal_flip=True)
-
-        X_train = train_data.flow_from_directory(data_path + '/training_set',
-                                                 target_size=(224, 224),
-                                                 batch_size=32,
-                                                 class_mode='categorical')
-        test_data = ImageDataGenerator(rescale=1. / 255)
-        X_test = test_data.flow_from_directory(data_path + '/test_set',
-                                               target_size=(224, 224),
-                                               batch_size=32,
-                                               class_mode='categorical')
-        # Fitting/Training the model
+        train_data = ImageDataGenerator(rescale = 1./255,
+                                   shear_range = 0.2,
+                                   zoom_range = 0.2,
+                                   horizontal_flip = True)
+                                   
+        X_train = train_data.flow_from_directory(data_path+'/training_set',
+                                                 target_size = (224, 224),
+                                                 batch_size = 32,
+                                                 class_mode = 'categorical')
+        test_data=ImageDataGenerator(rescale = 1./255)
+        X_test = test_data.flow_from_directory(data_path+'/test_set',
+                                            target_size = (224, 224),
+                                            batch_size = 32,
+                                            class_mode = 'categorical')
+		#Fitting/Training the model
         print(X_train)
-        history = model.fit_generator(generator=X_train,
-                                      steps_per_epoch=X_train.n // X_train.batch_size,
-                                      validation_data=X_test,
-                                      validation_steps=X_test.n // X_test.batch_size,
-                                      epochs=10
-                                      )
+
+        logger("Training CNN model ...")
+        history=model.fit_generator(generator=X_train,
+                    steps_per_epoch=X_train.n//X_train.batch_size,
+                    validation_data=X_test,
+                    validation_steps=X_test.n//X_test.batch_size,
+                    epochs=10,
+                    verbose=0
+         )
+        logger("->","Number of layers: "+ str(len(model.layers)))
+        logger("->","Training Accuracy: "+ str(history.history['accuracy']
+                    [len(history.history['val_loss']) - 1],'|'))
+        logger("->","Test Accuracy: "+ str(history.history['val_accuracy']
+                    [len(history.history['val_loss']) - 1]),'|')
         # storing values the model dictionary
         self.models["convolutional_NN"] = {
             "model": model,
