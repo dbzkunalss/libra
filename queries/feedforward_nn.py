@@ -1,17 +1,17 @@
 import sys
-import os 
+import os
 
 sys.path.insert(1, './preprocessing')
 sys.path.insert(1, './data_generation')
 sys.path.insert(1, './modeling')
 sys.path.insert(1, './plotting')
 
-from data_preprocesser import image_preprocess, add_resized_images, replace_images, process_color_channel
+from image_preprocesser import setwise_preprocessing, pathwise_preprocessing, classwise_preprocessing
 from data_reader import DataReader
 from keras.models import Sequential
 from keras.layers import (Dense, Conv2D, Flatten, Input, MaxPooling2D, )
-import pandas as pd 
-from supplementaries import save
+import pandas as pd
+from supplementaries import save, generate_id
 from keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -22,13 +22,12 @@ from data_preprocesser import structured_preprocesser, initial_preprocesser
 from prediction_model_creation import get_keras_model_reg, get_keras_text_class
 from prediction_model_creation import get_keras_model_class
 from sklearn.preprocessing import StandardScaler
-import numpy as np 
+import numpy as np
 #from prediction_queries import logger, clearLog
 
 
 currLog = ""
 counter = 0
-number = 0
 # current_dir=os.getcw()
 
 # allows for all columns to be displayed when printing()
@@ -63,12 +62,10 @@ def logger(instruction, found="", slash=''):
         else:
             currLog += (" " * 2 * counter) + str(instruction) + str(found)
     else:
-        currLog += (" " * 2 * counter) + "|"
-        currLog += "\n"
+        currLog += (" " * 2 * counter) + "|" + "\n"
         currLog += (" " * 2 * counter) + "|- " + str(instruction) + str(found)
         if instruction == "done...":
-            currLog += "\n"
-            currLog += "\n"
+            currLog += "\n" + "\n"
 
     counter += 1
     if instruction == "->":
@@ -207,6 +204,7 @@ def regression_ann(
             save(final_model, save_model)
         # stores values in the client object models dictionary field
         return {
+            'id': generate_id(),
             'model': final_model,
             "target": target,
             "plots": plots,
@@ -342,6 +340,7 @@ def classification_ann(instruction,
 
         # stores the values and plots into the object dictionary
         return {
+            'id': generate_id(),
             "model": final_model,
             'num_classes': num_classes,
             "plots": plots,
@@ -356,27 +355,49 @@ def classification_ann(instruction,
                 'validation_accuracy': final_hist.history['val_accuracy']}}
 
 
-def convolutional(data_path=None, new_folders=True):
+def convolutional(self,
+                read_mode="setwise",
+                data_paths=None,
+                new_folders=True,
+                csv_file=None,
+                label_column=None,
+                image_column=None,
+                training_ratio=0.8):
+
     logger("Creating CNN generation query")
     # generates the dataset based on instructions using a selenium query on
     # google chrome
     logger("Generating datasets for classes...")
-    # Assuming Downloaded Images in current Directory if no data_path
-    # provided
-    if data_path is None:
-        data_path = os.getcwd()
-    # process images
-    processInfo = image_preprocess(data_path, new_folders)
+
+    # if image dataset in form of a data folder
+    training_path = "/proc_training_set"
+    testing_path = "/proc_testing_set"
+
+    if read_mode=="setwise":
+        if data_paths is None:
+            data_path = os.getcwd()
+        else:
+            data_path = data_paths
+        # process images
+        processInfo = setwise_preprocessing(data_paths, new_folders)
+        if not new_folders:
+            training_path = "/training_set"
+            testing_path = "/testing_set"
+
+    # if image dataset in form of csv
+    elif read_mode=="pathwise":
+        processInfo = pathwise_preprocessing(csv_file, data_paths, label_column, image_column, training_ratio)
+        data_path = os.path.dirname(csv_file)
+
+    # if image dataset in form of one folder containing class folders
+    elif read_mode=="classwise":
+        processInfo = classwise_preprocessing(data_paths, training_ratio)
+        data_path = data_paths
+
     input_shape = (processInfo["height"], processInfo["width"], 3)
     input_single = (processInfo["height"], processInfo["width"])
     num_classes = processInfo["num_categories"]
     loss_func = ""
-    if new_folders:
-        training_path = "/proc_training_set"
-        testing_path = "/proc_testing_set"
-    else:
-        training_path = "/training_set"
-        testing_path = "/testing_set"
 
     if num_classes > 2:
         loss_func = "categorical_crossentropy"
@@ -431,6 +452,7 @@ def convolutional(data_path=None, new_folders=True):
 
     # storing values the model dictionary
     return {
+        'id': generate_id(),
         "model": model,
         'num_classes': (2 if num_classes == 1 else num_classes),
         'losses': {

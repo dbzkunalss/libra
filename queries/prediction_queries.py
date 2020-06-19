@@ -1,23 +1,24 @@
 # Making functions in other directories accesible to this file by
-# inserting into sis path
-import sys
+# inserting into sys path
 
+import sys
 sys.path.insert(1, './preprocessing')
 sys.path.insert(1, './data_generation')
 sys.path.insert(1, './modeling')
 sys.path.insert(1, './plotting')
 
-#from nlp_queries import predict_text_sentiment, text_classification_query, get_summary, summarization_query
-import os
-import warnings
-from pandas.core.common import SettingWithCopyWarning
-import pandas as pd
-from dataset_labelmatcher import get_similar_column, get_similar_model
-from grammartree import get_value_instruction
-from dimensionality_red_queries import dimensionality_reduc
-from feedforward_nn import regression_ann, classification_ann, convolutional
-from supplementaries import tune_helper, stats
 from classification_models import k_means_clustering, train_svm, nearest_neighbors, decision_tree
+from supplementaries import tune_helper, stats, generate_id
+from feedforward_nn import regression_ann, classification_ann, convolutional
+from dimensionality_red_queries import dimensionality_reduc
+from grammartree import get_value_instruction
+from dataset_labelmatcher import get_similar_column, get_similar_model
+import pandas as pd
+from pandas.core.common import SettingWithCopyWarning
+import warnings
+import os
+
+from nlp_queries import predict_text_sentiment, text_classification_query, get_summary, summarization_query
 
 
 # Importing the T5 modules from huggingface/transformers
@@ -67,12 +68,10 @@ def logger(instruction, found="", slash=''):
         else:
             currLog += (" " * 2 * counter) + str(instruction) + str(found)
     else:
-        currLog += (" " * 2 * counter) + "|"
-        currLog += "\n"
+        currLog += (" " * 2 * counter) + "|"+"\n"
         currLog += (" " * 2 * counter) + "|- " + str(instruction) + str(found)
         if instruction == "done...":
-            currLog += "\n"
-            currLog += "\n"
+            currLog += "\n"+"\n"
 
     counter += 1
     if instruction == "->":
@@ -123,7 +122,7 @@ class client:
                              generate_plots=True,
                              callback_mode='min',
                              maximizer="val_loss",
-                             save_model=True,
+                             save_model=False,
                              save_path=os.getcwd()):
 
         data = pd.read_csv(self.dataset)
@@ -203,7 +202,7 @@ class client:
             epochs=5,
             generate_plots=True,
             maximizer="val_loss",
-            save_model=True,
+            save_model=False,
             save_path=os.getcwd()):
 
         self.models['classification_ANN'] = classification_ann(
@@ -282,6 +281,15 @@ class client:
             model_to_tune=model_to_tune,
             dataset=self.dataset,
             models=self.models,
+            max_layers=10,
+            min_layers=2,
+            min_dense=32,
+            max_dense=512,
+            executions_per_trial=3,
+            max_trials=1,
+            activation='relu',
+            loss='categorical_crossentropy',
+            metrics='accuracy'
         )
 
     def stat_analysis(self, column_name="none", drop=None):
@@ -293,10 +301,24 @@ class client:
 
         return
 
-    def convolutional_query(self, data_path=None, new_folders=True):
+    def convolutional_query(self,
+                            read_mode="setwise",
+                            data_paths=None,
+                            new_folders=True,
+                            csv_file=None,
+                            label_column=None,
+                            image_column=None,
+                            training_ratio=0.8):
 
         # storing values the model dictionary
-        self.models["convolutional_NN"] = convolutional(data_path=data_path, new_folders=new_folders)
+        self.models["convolutional_NN"] = convolutional(self,
+            read_mode=read_mode,
+            data_paths=data_paths,
+            new_folders=new_folders,
+            csv_file=csv_file,
+            label_column=label_column,
+            image_column=image_column,
+            training_ratio=training_ratio)
 
     # Sentiment analysis predict wrapper
     def predict_text_sentiment(self, text):
@@ -306,7 +328,8 @@ class client:
     def text_classification_query(self, instruction):
 
         # storing values the model dictionary
-        self.models["Text Classification LSTM"] = text_classification_query(self=self, instruction=instruction)
+        self.models["Text Classification LSTM"] = text_classification_query(
+            self=self, instruction=instruction)
 
     # Document summarization predict wrapper
     def get_summary(self, text):
@@ -320,7 +343,8 @@ class client:
                             epochs=1,
                             generate_plots=True):
 
-        self.models["Document Summarization"] = summarization_query(self=self, instruction=instruction)
+        self.models["Document Summarization"] = summarization_query(
+            self=self, instruction=instruction)
 
     def dimensionality_reducer(self, instruction):
         dimensionality_reduc(instruction, self.dataset)
@@ -331,9 +355,7 @@ class client:
 
 # Easier to comment the one you don't want to run instead of typing them
 # out every time
-newClient = client('./data/housing.csv')
-newClient.neural_network_query("Model median house value", epochs=2)
-newClient.tune('regression_ANN')
-
+# newClient = client('./data/housing.csv')
+# newClient.neural_network_query("Model the median house value", epochs=2, save_model=False)
 # newClient = client('./data/landslides_after_rainfall.csv').neural_network_query(instruction='Model distance',
 # drop=['id', 'geolocation', 'source_link', 'source_name'])

@@ -9,8 +9,7 @@ sys.path.insert(1, './plotting')
 
 from data_reader import DataReader
 from grammartree import get_value_instruction
-from sklearn import preprocessing, svm
-from sklearn import preprocessing, tree
+from sklearn import preprocessing, svm, tree
 from sklearn.metrics import accuracy_score
 from data_preprocesser import structured_preprocesser, initial_preprocesser, clustering_preprocessor
 from sklearn.cluster import KMeans
@@ -18,13 +17,13 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_score
 import numpy as np
+from supplementaries import generate_id
 from generate_plots import (generate_clustering_plots,
                            generate_regression_plots,
                            generate_classification_plots)
 
 currLog = ""
 counter = 0
-number = 0
 
 def clearLog():
     global currLog
@@ -51,12 +50,10 @@ def logger(instruction, found="", slash=''):
         else:
             currLog += (" " * 2 * counter) + str(instruction) + str(found)
     else:
-        currLog += (" " * 2 * counter) + "|"
-        currLog += "\n"
+        currLog += (" " * 2 * counter) + "|" + "\n"
         currLog += (" " * 2 * counter) + "|- " + str(instruction) + str(found)
         if instruction == "done...":
-            currLog += "\n"
-            currLog += "\n"
+            currLog += "\n" + "\n"
 
     counter += 1
     if instruction == "->":
@@ -132,6 +129,7 @@ def k_means_clustering(dataset= None,
 
         # stores plots and information in the dictionary client model
         return {
+            'id': generate_id(),
             "model": modelStorage[len(modelStorage) - 1],
             "preprocesser": full_pipeline,
             "plots": plots}
@@ -184,6 +182,7 @@ def train_svm(instruction,
         clf.fit(X_train, y_train)
         logger("Storing information in client object...")
         return {
+            'id': generate_id(),
             "model": clf,
             "accuracy_score": accuracy_score(
                 clf.predict(X_test),
@@ -240,6 +239,7 @@ def nearest_neighbors(instruction=None,
         logger("Storing information in client object...")
         knn = models[scores.index(min(scores))]
         return {
+            'id': generate_id(),
             "model": knn, "accuracy_score": scores.index(
                 min(scores)),
             "preprocesser": full_pipeline,
@@ -294,6 +294,7 @@ def decision_tree(instruction,
     clearLog()
 
     return {
+            'id': generate_id(),
             "model": clf,
             "target": remove,
             "accuracy_score": accuracy_score(
