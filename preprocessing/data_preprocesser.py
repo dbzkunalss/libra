@@ -45,10 +45,14 @@ def initial_preprocesser(data, instruction, preprocess):
 
     del data[target]
     X_train, X_test, y_train, y_test = train_test_split(
-        data, y, test_size=0.2, random_state=49)
+        data, y, test_size=0.3, random_state=49)
+
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_test, y_test, test_size=0.5, random_state=49)
 
     data = {
         'train': pd.concat([X_train], axis=1),
+        'validation': pd.concat([X_val], axis=1),
         'test': pd.concat([X_test], axis=1)
     }
     # preprocess the dataset
@@ -58,7 +62,7 @@ def initial_preprocesser(data, instruction, preprocess):
     else:
         data.fillna(0, inplace=True)
 
-    y = {'train': y_train, 'test': y_test}
+    y = {'train': y_train, 'validation': y_val, 'test': y_test}
 
     return data, y, target, full_pipeline
 
